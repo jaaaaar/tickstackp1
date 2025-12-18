@@ -1,0 +1,66 @@
+services:
+  # ===========================================
+  # INFLUXDB - aegreade andmebaas
+  # ===========================================
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"           # UI ja API port
+    volumes:
+      - influxdb-data:/var/lib/influxdb2    # Andmed säilivad ka peale restart'i
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=${DOCKER_INFLUXDB_INIT_MODE}
+      - DOCKER_INFLUXDB_INIT_USERNAME=${DOCKER_INFLUXDB_INIT_USERNAME}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${DOCKER_INFLUXDB_INIT_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${DOCKER_INFLUXDB_INIT_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${DOCKER_INFLUXDB_INIT_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${DOCKER_INFLUXDB_INIT_ADMIN_TOKEN}
+    networks:
+      - monitoring
+
+  # ===========================================
+  # TELEGRAF - andmete koguja
+  # ===========================================
+  telegraf:
+    image: telegraf:1.28
+    container_name: telegraf
+    restart: unless-stopped
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro  # Konfig (read-only)
+      - /var/run/docker.sock:/var/run/docker.sock:ro             # Docker info lugemine
+      - ./flask-app/logs:/app/logs:ro                            # Flask logide lugemine
+    environment:
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+    group_add:
+      - "${DOCKER_GID}"       # Lisa docker grupp
+    depends_on:
+      - influxdb              # Oota, kuni InfluxDB on üleval
+    networks:
+      - monitoring
+
+  # ===========================================
+  # FLASK APP - rakendus, mida monitoorime
+  # ===========================================
+  flask-app:
+    build: ./flask-app        # Ehita Dockerfile'ist
+    container_name: flask-app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./flask-app/logs:/app/logs    # Logid - Flask kirjutab, Telegraf loeb
+    networks:
+      - monitoring
+
+# Kõik konteinerid samas võrgus - näevad üksteist nimepidi
+networks:
+  monitoring:
+    driver: bridge
+
+# Püsiv andmeruum InfluxDB jaoks
+volumes:
+  influxdb-data:
